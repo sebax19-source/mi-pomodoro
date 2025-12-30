@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodoro Definitivo - Como Focus To-Do</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --text: #e0e0e0;
+            --text-secondary: #aaaaaa;
+            --accent: #ff4d6d;
+            --accent-light: #ff6b86;
+            --border: #333;
+            --input-bg: #2d2d2d;
+        }
+        body.light {
+            --bg: #f5f5f5;
+            --surface: #ffffff;
+            --text: #333333;
+            --text-secondary: #666666;
+            --accent: #e91e63;
+            --accent-light: #f06292;
+            --border: #dddddd;
+            --input-bg: #f0f0f0;
+        }
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: var(--bg); 
+            color: var(--text); 
+            display: flex; 
+            height: 100vh; 
+            overflow: hidden;
+        }
+        .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        .sidebar { width: 340px; background: var(--surface); border-left: 1px solid var(--border); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+        h1 { margin: 0 0 10px 0; font-size: 1.5em; }
+        .timer-circle { width: 300px; height: 300px; position: relative; margin: 40px 0; }
+        .circle-bg { fill: none; stroke: var(--border); stroke-width: 12; }
+        .circle-progress { fill: none; stroke: var(--accent); stroke-width: 12; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 0.5s; }
+        .timer-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 3.5em; font-weight: bold; }
+        .task-name { font-size: 1.4em; margin: 20px 0; min-height: 40px; text-align: center; max-width: 80%; }
+        .controls { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .controls button { padding: 12px 30px; font-size: 1.1em; border: none; border-radius: 30px; background: var(--accent); color: white; cursor: pointer; min-width: 200px; }
+        .controls button:hover { background: var(--accent-light); }
+        .controls button.secondary { background: transparent; border: 2px solid var(--accent); }
+        .controls .break-custom { display: none; flex-direction: column; gap: 10px; }
+        .controls input { padding: 10px; font-size: 1.2em; text-align: center; background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); width: 150px; }
+        .stat-item { padding: 15px 0; border-bottom: 1px solid var(--border); }
+        .stat-title { font-size: 0.9em; color: var(--text-secondary); }
+        .stat-value { font-size: 1.8em; font-weight: bold; margin-top: 5px; }
+        .history-item { padding: 10px 0; font-size: 0.95em; border-bottom: 1px dashed var(--border); }
+        .pending-tasks { margin-top: 30px; }
+        .pending-task { padding: 12px; background: rgba(255,77,109,0.1); border-radius: 8px; margin: 8px 0; }
+        .header { position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; }
+        .header button { background: none; border: none; font-size: 1.5em; cursor: pointer; }
+        .settings { margin-top: auto; padding-top: 30px; border-top: 1px solid var(--border); }
+        .settings h3 { margin: 0 0 15px 0; }
+        .settings-grid { display: grid; gap: 12px; }
+        .settings-grid label { font-size: 0.9em; color: var(--text-secondary); }
+        .settings-grid input { width: 100%; padding: 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+        @media (max-width: 900px) {
+            body { flex-direction: column; }
+            .sidebar { width: 100%; height: auto; border-left: none; border-top: 1px solid var(--border); }
+            .timer-circle { width: 250px; height: 250px; }
+            .timer-text { font-size: 2.8em; }
+        }
+    </style>
+</head>
+<body class="dark">
+    <div class="main">
+        <div class="header">
+            <button id="dark-toggle" title="Modo claro/oscuro">☀️</button>
+            <button id="fullscreen" title="Pantalla completa">⛶</button>
+        </div>
+        
+        <div class="task-name" id="task-name">Selecciona una tarea para comenzar</div>
+        
+        <div class="timer-circle">
+            <svg width="300" height="300">
+                <circle class="circle-bg" cx="150" cy="150" r="140"></circle>
+                <circle class="circle-progress" cx="150" cy="150" r="140" stroke-dasharray="880" stroke-dashoffset="880"></circle>
+            </svg>
+            <div class="timer-text" id="timer">25:00</div>
+        </div>
+        
+        <div class="controls">
+            <button id="start">Iniciar</button>
+            <button id="pause" class="secondary">Pausar</button>
+            <button id="reset" class="secondary">Reiniciar</button>
+            
+            <!-- Nuevo: Personalizar descanso -->
+            <div class="break-custom" id="break-custom">
+                <button id="change-break" class="secondary">Cambiar tiempo de descanso</button>
+                <div style="display:none; flex-direction:column; align-items:center;" id="break-input-container">
+                    <input type="number" id="custom-break-min" min="1" placeholder="Minutos">
+                    <button id="apply-custom-break">Aplicar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <!-- ... (mismo sidebar que antes: stats, tareas, historial, configuración) ... -->
+        <h1>Hoy</h1>
+        
+        <div class="stat-item">
+            <div class="stat-title">Tiempo enfocado</div>
+            <div class="stat-value" id="focus-time">0 min</div>
+        </div>
+        
+        <div class="stat-item">
+            <div class="stat-title">Pomodoros completados</div>
+            <div class="stat-value" id="daily-pomos">0</div>
+        </div>
+        
+        <div class="pending-tasks">
+            <h3 style="margin: 20px 0 10px;">Tareas pendientes</h3>
+            <div id="pending-list">No hay tareas pendientes</div>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <h3>Historial de hoy</h3>
+            <div id="history-list">Aún no has completado sesiones hoy</div>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <input type="text" id="new-task" placeholder="Nueva tarea..." style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text);">
+            <button id="add-task" style="width:100%; margin-top:10px; padding:12px; background:var(--accent); border:none; border-radius:8px; color:white; font-size:1.1em;">+ Agregar tarea</button>
+        </div>
+        
+        <div style="margin-top: 20px;" id="task-list">
+            <h3 style="margin:20px 0 10px;">Tus tareas</h3>
+        </div>
+
+        <div class="settings">
+            <h3>Configuración de tiempos</h3>
+            <div class="settings-grid">
+                <div>
+                    <label>Tiempo de estudio (min)</label>
+                    <input type="number" id="work-time" min="1" value="25">
+                </div>
+                <div>
+                    <label>Descanso corto (min)</label>
+                    <input type="number" id="short-break" min="1" value="5">
+                </div>
+                <div>
+                    <label>Descanso largo (min)</label>
+                    <input type="number" id="long-break" min="1" value="15">
+                </div>
+                <div>
+                    <label>Pomodoros antes del largo</label>
+                    <input type="number" id="cycles" min="1" value="4">
+                </div>
+            </div>
+            <button id="apply-settings" style="width:100%; margin-top:15px; padding:12px; background:var(--accent); border:none; border-radius:8px; color:white; font-size:1.1em;">Aplicar cambios</button>
+        </div>
+    </div>
+
+    <audio id="alarm" src="https://www.soundjay.com/buttons/beep-07.mp3"></audio>
+
+    <script>
+        // Configuración y variables (igual que antes)
+        let config = JSON.parse(localStorage.getItem('pomodoroConfig')) || { workTime: 25, shortBreak: 5, longBreak: 15, cycles: 4 };
+        let workTime = config.workTime * 60;
+        let shortBreak = config.shortBreak * 60;
+        let longBreak = config.longBreak * 60;
+        let cycles = config.cycles;
+
+        let timeLeft = workTime;
+        let isRunning = false;
+        let isWork = true;
+        let currentCycle = 1;
+        let interval;
+        let currentTask = null;
+        let dailyPomos = 0;
+        let totalFocusTime = 0;
+        let todayHistory = [];
+
+        let tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+        let stats = JSON.parse(localStorage.getItem('stats')) || { date: new Date().toDateString(), pomos: 0, focusTime: 0, history: [] };
+        if (stats.date !== new Date().toDateString()) stats = { date: new Date().toDateString(), pomos: 0, focusTime: 0, history: [] };
+        dailyPomos = stats.pomos;
+        totalFocusTime = stats.focusTime;
+        todayHistory = stats.history;
+
+        // Elementos nuevos
+        const breakCustom = document.getElementById('break-custom');
+        const changeBreakBtn = document.getElementById('change-break');
+        const breakInputContainer = document.getElementById('break-input-container');
+        const customBreakInput = document.getElementById('custom-break-min');
+        const applyCustomBreakBtn = document.getElementById('apply-custom-break');
+
+        // Resto de elementos (igual)
+        const timerEl = document.getElementById('timer');
+        const progressCircle = document.querySelector('.circle-progress');
+        const taskNameEl = document.getElementById('task-name');
+        const focusTimeEl = document.getElementById('focus-time');
+        const dailyPomosEl = document.getElementById('daily-pomos');
+        const historyList = document.getElementById('history-list');
+        const pendingList = document.getElementById('pending-list');
+        const taskList = document.getElementById('task-list');
+        const startBtn = document.getElementById('start');
+        const pauseBtn = document.getElementById('pause');
+        const resetBtn = document.getElementById('reset');
+        const addTaskBtn = document.getElementById('add-task');
+        const newTaskInput = document.getElementById('new-task');
+        const applySettingsBtn = document.getElementById('apply-settings');
+        const darkToggle = document.getElementById('dark-toggle');
+        const fullscreenBtn = document.getElementById('fullscreen');
+        const alarm = document.getElementById('alarm');
+
+        // Config inputs
+        document.getElementById('work-time').value = config.workTime;
+        document.getElementById('short-break').value = config.shortBreak;
+        document.getElementById('long-break').value = config.longBreak;
+        document.getElementById('cycles').value = config.cycles;
+
+        // Modo oscuro y fullscreen (igual)
+        if (localStorage.getItem('darkMode') !== 'false') document.body.classList.add('dark');
+        darkToggle.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+        darkToggle.onclick = () => {
+            document.body.classList.toggle('dark');
+            darkToggle.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+            localStorage.setItem('darkMode', document.body.classList.contains('dark'));
+        };
+        fullscreenBtn.onclick = () => document.documentElement.requestFullscreen?.() || document.documentElement.webkitRequestFullscreen?.();
+
+        const circumference = 880;
+        function updateProgress() {
+            const total = isWork ? workTime : timeLeft + 1; // aproximado
+            const offset = circumference - (timeLeft / total) * circumference;
+            progressCircle.style.strokeDashoffset = offset;
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function updateDisplay() {
+            timerEl.textContent = formatTime(timeLeft);
+            updateProgress();
+            focusTimeEl.textContent = `${Math.floor(totalFocusTime / 60)} min`;
+            dailyPomosEl.textContent = dailyPomos;
+            breakCustom.style.display = isWork ? 'none' : 'flex';
+        }
+
+        function completeSession() {
+            clearInterval(interval);
+            isRunning = false;
+            alarm.play();
+
+            if (isWork && currentTask) {
+                currentTask.pomos = (currentTask.pomos || 0) + 1;
+                dailyPomos++;
+                totalFocusTime += config.workTime * 60;
+                todayHistory.unshift({
+                    task: currentTask.name,
+                    minutes: config.workTime,
+                    time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                });
+                if (todayHistory.length > 10) todayHistory.pop();
+            }
+
+            saveData();
+            renderAll();
+            startBreak();
+        }
+
+        function startBreak() {
+            currentCycle++;
+            const isLong = currentCycle > cycles;
+            if (isLong) currentCycle = 1;
+            timeLeft = isLong ? longBreak : shortBreak;
+            isWork = false;
+            isRunning = true; // ¡Empieza automáticamente!
+            interval = setInterval(() => {
+                timeLeft--;
+                updateDisplay();
+                if (timeLeft <= 0) {
+                    alarm.play();
+                    clearInterval(interval);
+                    isRunning = false;
+                    isWork = true;
+                    timeLeft = workTime;
+                    updateDisplay();
+                }
+            }, 1000);
+            updateDisplay();
+        }
+
+        // Cambiar tiempo de descanso actual
+        changeBreakBtn.onclick = () => {
+            breakInputContainer.style.display = 'flex';
+        };
+
+        applyCustomBreakBtn.onclick = () => {
+            const min = parseInt(customBreakInput.value);
+            if (min >= 1) {
+                timeLeft = min * 60;
+                updateDisplay();
+                breakInputContainer.style.display = 'none';
+                customBreakInput.value = '';
+            } else {
+                alert('Ingresa al menos 1 minuto');
+            }
+        };
+
+        function startTimer() {
+            if (!currentTask) { alert("Selecciona una tarea primero"); return; }
+            if (!isRunning) {
+                isRunning = true;
+                interval = setInterval(() => {
+                    timeLeft--;
+                    updateDisplay();
+                    if (timeLeft <= 0) completeSession();
+                }, 1000);
+            }
+        }
+
+        function pauseTimer() { clearInterval(interval); isRunning = false; }
+        function resetTimer() {
+            clearInterval(interval);
+            isRunning = false;
+            timeLeft = isWork ? workTime : (currentCycle > cycles ? longBreak : shortBreak);
+            updateDisplay();
+        }
+
+        // Resto de funciones (selectTask, renderTasks, renderPending, renderHistory, addTask, saveData, applySettings) igual que antes
+        function selectTask(task) {
+            currentTask = task;
+            taskNameEl.textContent = task ? task.name : 'Selecciona una tarea para comenzar';
+        }
+
+        function renderTasks() {
+            taskList.innerHTML = '<h3 style="margin:20px 0 10px;">Tus tareas</h3>';
+            if (tasks.length === 0) { taskList.innerHTML += '<p style="color:var(--text-secondary);">No tienes tareas aún</p>'; return; }
+            tasks.forEach(task => {
+                const div = document.createElement('div');
+                div.style.padding = '12px';
+                div.style.background = currentTask === task ? 'rgba(255,77,109,0.2)' : 'transparent';
+                div.style.borderRadius = '8px';
+                div.style.margin = '5px 0';
+                div.style.cursor = 'pointer';
+                div.innerHTML = `<div style="font-weight:bold;">${task.name}</div><div style="font-size:0.9em; color:var(--text-secondary;">${task.pomos || 0} pomodoros</div>`;
+                div.onclick = () => selectTask(task);
+                taskList.appendChild(div);
+            });
+        }
+
+        function renderPending() {
+            const pending = tasks.filter(t => !t.pomos || t.pomos === 0);
+            pendingList.innerHTML = pending.length === 0 
+                ? '<p style="color:var(--text-secondary);">¡Todas en progreso o completadas!</p>'
+                : pending.map(t => `<div class="pending-task">${t.name}</div>`).join('');
+        }
+
+        function renderHistory() {
+            historyList.innerHTML = todayHistory.length === 0
+                ? '<p style="color:var(--text-secondary);">Aún no has completado sesiones hoy</p>'
+                : todayHistory.map(e => `<div class="history-item"><strong>${e.task}</strong> • ${e.minutes} min • ${e.time}</div>`).join('');
+        }
+
+        function renderAll() {
+            renderTasks();
+            renderPending();
+            renderHistory();
+            updateDisplay();
+        }
+
+        function addTask() {
+            const name = newTaskInput.value.trim();
+            if (name) {
+                const task = { name, pomos: 0 };
+                tasks.push(task);
+                newTaskInput.value = '';
+                if (!currentTask) selectTask(task);
+                saveData();
+                renderAll();
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+            localStorage.setItem('stats', JSON.stringify({ date: new Date().toDateString(), pomos: dailyPomos, focusTime: totalFocusTime, history: todayHistory }));
+        }
+
+        applySettingsBtn.onclick = () => {
+            const newWork = parseInt(document.getElementById('work-time').value);
+            const newShort = parseInt(document.getElementById('short-break').value);
+            const newLong = parseInt(document.getElementById('long-break').value);
+            const newCycles = parseInt(document.getElementById('cycles').value);
+
+            if (newWork >= 1 && newShort >= 1 && newLong >= 1 && newCycles >= 1) {
+                config = { workTime: newWork, shortBreak: newShort, longBreak: newLong, cycles: newCycles };
+                workTime = newWork * 60;
+                shortBreak = newShort * 60;
+                longBreak = newLong * 60;
+                cycles = newCycles;
+                localStorage.setItem('pomodoroConfig', JSON.stringify(config));
+                if (isWork) timeLeft = workTime;
+                updateDisplay();
+                alert('¡Configuración actualizada!');
+            } else {
+                alert('Todos los valores deben ser mayores a 0');
+            }
+        };
+
+        // Eventos
+        startBtn.onclick = startTimer;
+        pauseBtn.onclick = pauseTimer;
+        resetBtn.onclick = resetTimer;
+        addTaskBtn.onclick = addTask;
+        newTaskInput.addEventListener('keypress', e => { if (e.key === 'Enter') addTask(); });
+
+        // Inicializar
+        updateDisplay();
+        renderAll();
+    </script>
+</body>
+</html>
